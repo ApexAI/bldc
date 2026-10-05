@@ -28,6 +28,7 @@
 #include "uavcan/equipment/esc/Status.h"
 #include "uavcan/equipment/esc/RawCommand.h"
 #include "uavcan/equipment/esc/RPMCommand.h"
+#include "com/apexai/esc/HandbrakeCommand.h"
 #include "uavcan/protocol/param/GetSet.h"
 #include "uavcan/protocol/GetNodeInfo.h"
 #include "uavcan/protocol/RestartNode.h"
@@ -709,6 +710,34 @@ static void handle_esc_raw_command(CanardInstance* ins, CanardRxTransfer* transf
 	}
 }
 
+/**
+ * Apply the positive handbrake current for this ESC's configured array index.
+ *
+ * @param ins CAN interface that received the broadcast.
+ * @param transfer Received DroneCAN handbrake broadcast.
+ */
+static void handle_esc_handbrake_command(CanardInstance* ins, CanardRxTransfer* transfer) {
+	(void)ins;
+
+	// Tail array optimization leaves no length prefix: each entry is 16 bits.
+	const uint16_t payload_len = transfer->payload_len;
+	const uint8_t esc_index = app_get_configuration()->uavcan_esc_index;
+	if (payload_len == 0 || payload_len > 40 || (payload_len & 1U) != 0 ||
+			esc_index >= payload_len / 2U) {
+		return;
+	}
+
+	uint16_t current_cA = 0;
+	if (canardDecodeScalar(transfer, (uint32_t)esc_index * 16U, 16, false,
+			(void*)&current_cA) != 16 || current_cA == 0) {
+		return;
+	}
+
+	app_disable_output(100);
+	mc_interface_set_handbrake((float)current_cA / 100.0f);
+	timeout_reset();
+}
+
 /*
  * Handle ESC RPM command
  */
@@ -1189,6 +1218,10 @@ static void onTransferReceived(CanardInstance* ins, CanardRxTransfer* transfer) 
 			handle_esc_rpm_command(ins, transfer);
 			break;
 
+		case COM_APEXAI_ESC_HANDBRAKECOMMAND_ID:
+			handle_esc_handbrake_command(ins, transfer);
+			break;
+
 		case UAVCAN_EQUIPMENT_ESC_STATUS_ID:
 			handle_esc_status(ins, transfer);
 			break;
@@ -1260,6 +1293,10 @@ static bool shouldAcceptTransfer(const CanardInstance* ins,
 
 		case UAVCAN_EQUIPMENT_ESC_RPMCOMMAND_ID:
 			*out_data_type_signature = UAVCAN_EQUIPMENT_ESC_RPMCOMMAND_SIGNATURE;
+			return true;
+
+		case COM_APEXAI_ESC_HANDBRAKECOMMAND_ID:
+			*out_data_type_signature = COM_APEXAI_ESC_HANDBRAKECOMMAND_SIGNATURE;
 			return true;
 
 		case UAVCAN_EQUIPMENT_ESC_STATUS_ID:
