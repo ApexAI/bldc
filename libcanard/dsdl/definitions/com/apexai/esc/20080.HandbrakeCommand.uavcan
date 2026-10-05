@@ -1,3 +1,3 @@
-# Positive motor handbrake current, indexed by uavcan_esc_index.
-# Values are in centiamps; zero means no command for that ESC.
+# Motor handbrake current, indexed by uavcan_esc_index.
+# Values are in centiamps; zero requests zero handbrake current.
 uint16[<=20] current_cA
